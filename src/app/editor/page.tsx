@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FaPlay, FaTerminal, FaCog, FaDatabase, FaTable, FaSearch, FaCode, FaClock, FaServer } from 'react-icons/fa';
+import { FaPlay, FaTerminal, FaCog, FaDatabase, FaTable, FaSearch, FaCode, FaClock, FaServer, FaChartBar, FaFilter, FaDownload, FaExpand } from 'react-icons/fa';
 import { Resizable } from 're-resizable';
 
 type QueryResult = {
@@ -12,11 +12,45 @@ type QueryResult = {
   status: 'success' | 'error';
 };
 
+// Add these new types
+type DataRow = {
+  id: number;
+  name: string;
+  age: number;
+  [key: string]: any;
+};
+
+type QueryAnalytics = {
+  totalRows: number;
+  avgAge: number;
+  executionTime: string;
+};
+
 // Add this gradient background component
 const GradientBackground = () => (
   <div className="absolute inset-0 -z-10">
     <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(120,119,198,0.3),rgba(0,0,0,0))]" />
   </div>
+);
+
+// Add this component for displaying the executed query
+const QueryCard = ({ query, timestamp }: { query: string; timestamp: string }) => (
+  <motion.div
+    initial={{ opacity: 0, y: 10 }}
+    animate={{ opacity: 1, y: 0 }}
+    className="rounded-lg border border-white/10 bg-white/5 p-4"
+  >
+    <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center gap-2">
+        <FaCode className="text-blue-400" />
+        <span className="text-sm font-medium">Executed Query</span>
+      </div>
+      <span className="text-xs text-white/40">{timestamp}</span>
+    </div>
+    <pre className="bg-black/20 rounded-lg p-4 overflow-x-auto text-sm text-white/80 font-mono">
+      {query}
+    </pre>
+  </motion.div>
 );
 
 export default function EditorPage() {
@@ -30,12 +64,29 @@ const query = await db.collection('users')
   const [isRunning, setIsRunning] = useState(false);
   const [selectedDatabase, setSelectedDatabase] = useState('users_db');
   const consoleRef = useRef<HTMLDivElement>(null);
+  const [showDashboard, setShowDashboard] = useState(true);
+  const [tableData, setTableData] = useState<DataRow[]>([]);
+  const [analytics, setAnalytics] = useState<QueryAnalytics>({
+    totalRows: 0,
+    avgAge: 0,
+    executionTime: '0ms'
+  });
+  const [dashboardHeight, setDashboardHeight] = useState(400);
+  const [lastExecutedQuery, setLastExecutedQuery] = useState<{
+    query: string;
+    timestamp: string;
+  } | null>(null);
 
   const handleSend = async () => {
     try {
       setIsRunning(true);
       const timestamp = new Date().toLocaleTimeString();
       
+      setLastExecutedQuery({
+        query: code,
+        timestamp
+      });
+
       // Add query to history immediately
       setQueryHistory(prev => [...prev, {
         timestamp,
@@ -44,9 +95,26 @@ const query = await db.collection('users')
         status: 'success'
       }]);
 
-      // Simulate API call
+      // Simulate API call and data fetching
       await new Promise(resolve => setTimeout(resolve, 1000));
       
+      // Sample data - replace with actual API response
+      const mockData: DataRow[] = Array.from({ length: 10 }, (_, i) => ({
+        id: i + 1,
+        name: `User ${i + 1}`,
+        age: Math.floor(Math.random() * 40) + 20,
+        email: `user${i + 1}@example.com`,
+        status: Math.random() > 0.5 ? 'active' : 'inactive',
+        lastLogin: new Date(Date.now() - Math.random() * 10000000000).toISOString()
+      }));
+
+      setTableData(mockData);
+      setAnalytics({
+        totalRows: mockData.length,
+        avgAge: mockData.reduce((acc, curr) => acc + curr.age, 0) / mockData.length,
+        executionTime: '0.123s'
+      });
+
       // Update with result
       setQueryHistory(prev => [
         ...prev.slice(0, -1),
@@ -153,7 +221,7 @@ const query = await db.collection('users')
       </motion.div>
 
       {/* Main Content */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 min-h-[30vh] overflow-hidden">
         {/* Editor Section */}
         <motion.div 
           initial={{ opacity: 0, x: -20 }}
@@ -245,6 +313,123 @@ const query = await db.collection('users')
           </motion.div>
         </Resizable>
       </div>
+
+      {/* Modified Dashboard Section */}
+      <Resizable
+        size={{ width: '100%', height: dashboardHeight }}
+        onResizeStop={(e, direction, ref, d) => {
+          setDashboardHeight(dashboardHeight + d.height);
+        }}
+        minHeight={300}
+        maxHeight={800}
+        enable={{ top: true }}
+        className="border-t border-white/10 bg-black/30 backdrop-blur-sm"
+      >
+        <div className="absolute top-0 left-0 right-0 h-1 cursor-row-resize group">
+          <div className="h-full w-full group-hover:bg-blue-500/50 transition-colors">
+            <div className="mx-auto w-20 h-1 bg-white/10 group-hover:bg-blue-500 transition-colors" />
+          </div>
+        </div>
+
+        <div className="h-full flex flex-col">
+          <div className="flex items-center justify-between px-6 py-3">
+            <div className="flex items-center gap-3">
+              <FaTable className="text-purple-400" />
+              <h2 className="text-sm font-medium">Query Results</h2>
+              <span className="text-xs text-white/40">⟵ Drag to resize</span>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-auto border-t border-white/10 p-6">
+            {lastExecutedQuery ? (
+              <div className="space-y-6">
+                {/* Query Display */}
+                <QueryCard 
+                  query={lastExecutedQuery.query}
+                  timestamp={lastExecutedQuery.timestamp}
+                />
+
+                {/* Results Summary */}
+                <div className="grid grid-cols-3 gap-4">
+                  <motion.div
+                    whileHover={{ scale: 1.02 }}
+                    className="rounded-lg border border-white/10 bg-white/5 p-4"
+                  >
+                    <div className="text-xs text-white/40">Rows Returned</div>
+                    <div className="mt-1 text-2xl font-semibold">{tableData.length}</div>
+                  </motion.div>
+                  <motion.div
+                    whileHover={{ scale: 1.02 }}
+                    className="rounded-lg border border-white/10 bg-white/5 p-4"
+                  >
+                    <div className="text-xs text-white/40">Execution Time</div>
+                    <div className="mt-1 text-2xl font-semibold">{analytics.executionTime}</div>
+                  </motion.div>
+                  <motion.div
+                    whileHover={{ scale: 1.02 }}
+                    className="rounded-lg border border-white/10 bg-white/5 p-4"
+                  >
+                    <div className="text-xs text-white/40">Status</div>
+                    <div className="mt-1 text-2xl font-semibold text-green-400">Success</div>
+                  </motion.div>
+                </div>
+
+                {/* Results Table */}
+                <div className="rounded-lg border border-white/10 bg-white/5 overflow-hidden">
+                  <div className="sticky top-0 flex items-center justify-between border-b border-white/10 px-4 py-3 bg-black/30 backdrop-blur-sm z-10">
+                    <div className="text-sm font-medium">Results Table</div>
+                    <div className="flex items-center gap-2">
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs"
+                      >
+                        <FaDownload className="text-xs" />
+                        <span>Export</span>
+                      </motion.button>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-white/10 bg-black/30">
+                          {tableData.length > 0 && Object.keys(tableData[0]).map(key => (
+                            <th key={key} className="px-4 py-2 text-left text-xs font-medium text-white/40">
+                              {key.charAt(0).toUpperCase() + key.slice(1)}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {tableData.map((row, i) => (
+                          <motion.tr
+                            key={row.id}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: i * 0.05 }}
+                            className="border-b border-white/5 hover:bg-white/5"
+                          >
+                            {Object.values(row).map((value, j) => (
+                              <td key={j} className="px-4 py-2 text-sm whitespace-nowrap">
+                                {typeof value === 'boolean' ? value.toString() : value}
+                              </td>
+                            ))}
+                          </motion.tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full text-white/40">
+                <FaTable className="text-4xl mb-3" />
+                <p className="text-sm">Execute a query to see results</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </Resizable>
 
       {/* Status Bar */}
       <motion.div 
