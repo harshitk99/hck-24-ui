@@ -2,8 +2,9 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FaPlay, FaTerminal, FaCog, FaDatabase, FaTable, FaSearch, FaCode, FaClock, FaServer, FaChartBar, FaFilter, FaDownload, FaExpand } from 'react-icons/fa';
+import { FaPlay, FaTerminal, FaCog, FaDatabase, FaTable, FaSearch, FaCode, FaClock, FaServer, FaChartBar } from 'react-icons/fa';
 import { Resizable } from 're-resizable';
+import BACKEND_URL from '../config';
 
 type QueryResult = {
   timestamp: string;
@@ -12,18 +13,9 @@ type QueryResult = {
   status: 'success' | 'error';
 };
 
-// Add these new types
-type DataRow = {
-  id: number;
-  name: string;
-  age: number;
-  [key: string]: any;
-};
-
-type QueryAnalytics = {
-  totalRows: number;
-  avgAge: number;
-  executionTime: string;
+type TableData = {
+  columns: string[];
+  rows: (string | number | boolean | null)[][];
 };
 
 // Add this gradient background component
@@ -33,112 +25,146 @@ const GradientBackground = () => (
   </div>
 );
 
-// Add this component for displaying the executed query
-const QueryCard = ({ query, timestamp }: { query: string; timestamp: string }) => (
-  <motion.div
-    initial={{ opacity: 0, y: 10 }}
-    animate={{ opacity: 1, y: 0 }}
-    className="rounded-lg border border-white/10 bg-white/5 p-4"
-  >
-    <div className="flex items-center justify-between mb-3">
-      <div className="flex items-center gap-2">
-        <FaCode className="text-blue-400" />
-        <span className="text-sm font-medium">Executed Query</span>
-      </div>
-      <span className="text-xs text-white/40">{timestamp}</span>
-    </div>
-    <pre className="bg-black/20 rounded-lg p-4 overflow-x-auto text-sm text-white/80 font-mono">
-      {query}
-    </pre>
-  </motion.div>
-);
-
 export default function EditorPage() {
-  const [code, setCode] = useState(`// Example:
-const query = await db.collection('users')
-  .find({ age: { $gt: 21 }})
-  .limit(10);`);
+  const [code, setCode] = useState(`// Example query:
+{
+  "users": {
+    "select": ["id", "name", "email", "status"],
+    "status": "active",
+    "limit": 10
+  }
+}`);
   
   const [consoleWidth, setConsoleWidth] = useState(400);
+  const [dashboardHeight, setDashboardHeight] = useState(300);
   const [queryHistory, setQueryHistory] = useState<QueryResult[]>([]);
   const [isRunning, setIsRunning] = useState(false);
-  const [selectedDatabase, setSelectedDatabase] = useState('users_db');
-  const consoleRef = useRef<HTMLDivElement>(null);
-  const [showDashboard, setShowDashboard] = useState(true);
-  const [tableData, setTableData] = useState<DataRow[]>([]);
-  const [analytics, setAnalytics] = useState<QueryAnalytics>({
-    totalRows: 0,
-    avgAge: 0,
-    executionTime: '0ms'
+  const [selectedDatabase, setSelectedDatabase] = useState('postgres');
+  const [tableData, setTableData] = useState<TableData>({
+    columns: ['id', 'name', 'email', 'status', 'last_login', 'is_active', 'score'],
+    rows: [
+      [1, "John Doe", "john@example.com", "premium", "2024-03-15T10:30:00", true, 95.5],
+      [2, "Jane Smith", "jane@example.com", "basic", "2024-03-14T15:45:00", true, 88.0],
+      [3, "Bob Wilson", "bob@example.com", "premium", "2024-03-13T09:20:00", false, 76.8],
+      [4, "Alice Brown", "alice@example.com", "trial", "2024-03-15T11:15:00", true, 92.3],
+      [5, "Charlie Davis", "charlie@example.com", "basic", "2024-03-12T16:50:00", true, 85.7],
+      [6, "Eva Martinez", "eva@example.com", "premium", null, false, 79.9],
+      [7, "David Clark", "david@example.com", "basic", "2024-03-14T14:25:00", true, 91.2],
+      [8, "Grace Lee", "grace@example.com", "trial", "2024-03-15T08:40:00", true, 88.6],
+      [9, "Frank Johnson", "frank@example.com", "premium", "2024-03-13T13:10:00", false, 82.4],
+      [10, "Helen White", "helen@example.com", "basic", "2024-03-15T09:55:00", true, 94.1]
+    ]
   });
-  const [dashboardHeight, setDashboardHeight] = useState(400);
-  const [lastExecutedQuery, setLastExecutedQuery] = useState<{
-    query: string;
-    timestamp: string;
-  } | null>(null);
+  const consoleRef = useRef<HTMLDivElement>(null);
 
   const handleSend = async () => {
     try {
       setIsRunning(true);
       const timestamp = new Date().toLocaleTimeString();
       
-      setLastExecutedQuery({
-        query: code,
-        timestamp
-      });
-
-      // Add query to history immediately
+      // Add query to history immediately with a pending status
       setQueryHistory(prev => [...prev, {
         timestamp,
         query: code,
-        result: 'Executing query...',
+        result: 'Generating optimized query...',
         status: 'success'
       }]);
 
-      // Simulate API call and data fetching
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Sample data - replace with actual API response
-      const mockData: DataRow[] = Array.from({ length: 10 }, (_, i) => ({
-        id: i + 1,
-        name: `User ${i + 1}`,
-        age: Math.floor(Math.random() * 40) + 20,
-        email: `user${i + 1}@example.com`,
-        status: Math.random() > 0.5 ? 'active' : 'inactive',
-        lastLogin: new Date(Date.now() - Math.random() * 10000000000).toISOString()
-      }));
-
-      setTableData(mockData);
-      setAnalytics({
-        totalRows: mockData.length,
-        avgAge: mockData.reduce((acc, curr) => acc + curr.age, 0) / mockData.length,
-        executionTime: '0.123s'
+      // Step 1: Send code to /generate endpoint
+      const generateResponse = await fetch(`${BACKEND_URL}/api/generate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ prompt: code }),
       });
-
-      // Update with result
+      
+      if (!generateResponse.ok) {
+        throw new Error(`Failed to generate query: ${generateResponse.statusText}`);
+      }
+      
+      const responseData = await generateResponse.json();
+      
+      // Extract the query data from the nested structure returned by your server
+      const outputJson = responseData.json || {};
+      
+      // Update code editor with the generated query instead of the console
+      setCode(JSON.stringify(outputJson.query, null, 2));
+      
+      // Update query history to show we're executing the generated query
       setQueryHistory(prev => [
         ...prev.slice(0, -1),
         {
           timestamp,
           query: code,
-          result: JSON.stringify({
-            results: [
-              { id: 1, name: 'John Doe', age: 25 },
-              { id: 2, name: 'Jane Smith', age: 28 }
-            ],
-            executionTime: '0.123s',
-            rowsAffected: 2
-          }, null, 2),
+          result: `Executing query...`,
+          status: 'success'
+        }
+      ]); 
+      
+      // Step 2: Send the generated query to the endpoint
+      const endpointUrl = `${BACKEND_URL}/api${outputJson.endpoint}` || `${BACKEND_URL}/api/query`;
+      const endpointResponse = await fetch(endpointUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(outputJson.query),
+      });
+      
+      if (!endpointResponse.ok) {
+        throw new Error(`Failed to execute query: ${endpointResponse.statusText}`);
+      }
+      
+      const result = await endpointResponse.json();
+      
+      // Parse result into tabular format if it's an array of objects
+      if (Array.isArray(result)) {
+        const firstRow = result[0];
+        if (firstRow && typeof firstRow === 'object') {
+          const columns = Object.keys(firstRow);
+          const rows = result.map(item => columns.map(col => item[col]));
+          setTableData({ columns, rows });
+        }
+      }
+
+      // Step 3: Update query history with the result
+      setQueryHistory(prev => [
+        ...prev.slice(0, -1),
+        {
+          timestamp,
+          query: "Executed query successfully",
+          result: JSON.stringify(result, null, 2),
           status: 'success'
         }
       ]);
     } catch (error) {
-      setQueryHistory(prev => [...prev, {
-        timestamp: new Date().toLocaleTimeString(),
-        query: code,
-        result: 'Error: Query execution failed',
-        status: 'error'
-      }]);
+      // Handle errors
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      setTableData({
+        columns: ['Error'],
+        rows: [[`Error: ${errorMessage}`]]
+      });
+      
+      setQueryHistory(prev => {
+        if (prev.length === 0) {
+          return [{
+            timestamp: new Date().toLocaleTimeString(),
+            query: code,
+            result: `Error: ${errorMessage}`,
+            status: 'error'
+          }];
+        }
+        return [
+          ...prev.slice(0, -1),
+          {
+            timestamp: prev[prev.length - 1].timestamp,
+            query: code,
+            result: `Error: ${errorMessage}`,
+            status: 'error'
+          }
+        ];
+      });
     } finally {
       setIsRunning(false);
       // Scroll console to bottom
@@ -147,6 +173,9 @@ const query = await db.collection('users')
       }
     }
   };
+
+  // Extract available databases from schema (could be fetched from server)
+  const availableDatabases = ['postgres', 'analytics', 'users_db'];
 
   return (
     <div className="relative flex h-screen flex-col bg-black text-white">
@@ -171,9 +200,9 @@ const query = await db.collection('users')
               value={selectedDatabase}
               onChange={(e) => setSelectedDatabase(e.target.value)}
             >
-              <option value="users_db">users_db</option>
-              <option value="products_db">products_db</option>
-              <option value="orders_db">orders_db</option>
+              {availableDatabases.map(db => (
+                <option key={db} value={db}>{db}</option>
+              ))}
             </select>
           </motion.div>
           
@@ -221,7 +250,7 @@ const query = await db.collection('users')
       </motion.div>
 
       {/* Main Content */}
-      <div className="flex flex-1 min-h-[30vh] overflow-hidden">
+      <div className="flex flex-1 overflow-hidden">
         {/* Editor Section */}
         <motion.div 
           initial={{ opacity: 0, x: -20 }}
@@ -232,7 +261,7 @@ const query = await db.collection('users')
           <div className="flex h-10 items-center border-b border-white/10 px-4">
             <div className="flex items-center gap-2 rounded-t-lg border-b-2 border-blue-500 bg-white/5 px-4 py-2 text-sm">
               <FaCode className="text-blue-400" />
-              <span>query.sql</span>
+              <span>query.json</span>
             </div>
           </div>
           
@@ -314,121 +343,77 @@ const query = await db.collection('users')
         </Resizable>
       </div>
 
-      {/* Modified Dashboard Section */}
+      {/* Draggable Dashboard */}
       <Resizable
         size={{ width: '100%', height: dashboardHeight }}
         onResizeStop={(e, direction, ref, d) => {
           setDashboardHeight(dashboardHeight + d.height);
         }}
-        minHeight={300}
+        minHeight={200}
         maxHeight={800}
         enable={{ top: true }}
-        className="border-t border-white/10 bg-black/30 backdrop-blur-sm"
+        className="relative border-t border-white/10 bg-black/30 backdrop-blur-sm"
       >
-        <div className="absolute top-0 left-0 right-0 h-1 cursor-row-resize group">
-          <div className="h-full w-full group-hover:bg-blue-500/50 transition-colors">
-            <div className="mx-auto w-20 h-1 bg-white/10 group-hover:bg-blue-500 transition-colors" />
-          </div>
-        </div>
-
-        <div className="h-full flex flex-col">
-          <div className="flex items-center justify-between px-6 py-3">
-            <div className="flex items-center gap-3">
-              <FaTable className="text-purple-400" />
-              <h2 className="text-sm font-medium">Query Results</h2>
-              <span className="text-xs text-white/40">⟵ Drag to resize</span>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="h-full flex flex-col"
+        >
+          <div className="flex h-10 items-center justify-between border-b border-white/10 px-4">
+            <div className="flex items-center gap-2 text-sm">
+              <FaChartBar className="text-purple-400" />
+              <span>Data Dashboard</span>
             </div>
+            {tableData && (
+              <span className="text-xs text-white/40">
+                {tableData.rows.length} rows × {tableData.columns.length} columns
+              </span>
+            )}
           </div>
-
-          <div className="flex-1 overflow-auto border-t border-white/10 p-6">
-            {lastExecutedQuery ? (
-              <div className="space-y-6">
-                {/* Query Display */}
-                <QueryCard 
-                  query={lastExecutedQuery.query}
-                  timestamp={lastExecutedQuery.timestamp}
-                />
-
-                {/* Results Summary */}
-                <div className="grid grid-cols-3 gap-4">
-                  <motion.div
-                    whileHover={{ scale: 1.02 }}
-                    className="rounded-lg border border-white/10 bg-white/5 p-4"
-                  >
-                    <div className="text-xs text-white/40">Rows Returned</div>
-                    <div className="mt-1 text-2xl font-semibold">{tableData.length}</div>
-                  </motion.div>
-                  <motion.div
-                    whileHover={{ scale: 1.02 }}
-                    className="rounded-lg border border-white/10 bg-white/5 p-4"
-                  >
-                    <div className="text-xs text-white/40">Execution Time</div>
-                    <div className="mt-1 text-2xl font-semibold">{analytics.executionTime}</div>
-                  </motion.div>
-                  <motion.div
-                    whileHover={{ scale: 1.02 }}
-                    className="rounded-lg border border-white/10 bg-white/5 p-4"
-                  >
-                    <div className="text-xs text-white/40">Status</div>
-                    <div className="mt-1 text-2xl font-semibold text-green-400">Success</div>
-                  </motion.div>
-                </div>
-
-                {/* Results Table */}
-                <div className="rounded-lg border border-white/10 bg-white/5 overflow-hidden">
-                  <div className="sticky top-0 flex items-center justify-between border-b border-white/10 px-4 py-3 bg-black/30 backdrop-blur-sm z-10">
-                    <div className="text-sm font-medium">Results Table</div>
-                    <div className="flex items-center gap-2">
-                      <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs"
-                      >
-                        <FaDownload className="text-xs" />
-                        <span>Export</span>
-                      </motion.button>
-                    </div>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b border-white/10 bg-black/30">
-                          {tableData.length > 0 && Object.keys(tableData[0]).map(key => (
-                            <th key={key} className="px-4 py-2 text-left text-xs font-medium text-white/40">
-                              {key.charAt(0).toUpperCase() + key.slice(1)}
-                            </th>
+          <div className="flex-1 overflow-auto p-4">
+            {tableData ? (
+              <div className="rounded-lg border border-white/10">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-white/10 bg-white/5">
+                        {tableData.columns.map((column, index) => (
+                          <th
+                            key={index}
+                            className="whitespace-nowrap px-4 py-2 text-left text-sm font-medium text-white/80"
+                          >
+                            {column}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tableData.rows.map((row, rowIndex) => (
+                        <tr
+                          key={rowIndex}
+                          className="border-b border-white/5 last:border-0 hover:bg-white/5"
+                        >
+                          {row.map((cell: string | number | boolean | null, cellIndex: number) => (
+                            <td
+                              key={cellIndex}
+                              className="whitespace-nowrap px-4 py-2 text-sm text-white/60"
+                            >
+                              {JSON.stringify(cell)}
+                            </td>
                           ))}
                         </tr>
-                      </thead>
-                      <tbody>
-                        {tableData.map((row, i) => (
-                          <motion.tr
-                            key={row.id}
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: i * 0.05 }}
-                            className="border-b border-white/5 hover:bg-white/5"
-                          >
-                            {Object.values(row).map((value, j) => (
-                              <td key={j} className="px-4 py-2 text-sm whitespace-nowrap">
-                                {typeof value === 'boolean' ? value.toString() : value}
-                              </td>
-                            ))}
-                          </motion.tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center h-full text-white/40">
-                <FaTable className="text-4xl mb-3" />
-                <p className="text-sm">Execute a query to see results</p>
+              <div className="flex h-full items-center justify-center text-sm text-white/40">
+                No data to display. Run a query to see results in tabular format.
               </div>
             )}
           </div>
-        </div>
+        </motion.div>
       </Resizable>
 
       {/* Status Bar */}
